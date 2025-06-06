@@ -21,7 +21,13 @@ class EmotiBitService:
         self.emotibit_ip = "192.168.0.187"  # Use actual EmotiBit IP, not broadcast
         
     async def connect(self) -> bool:
-        """Connect directly to EmotiBit device using its actual IP"""
+        """Connect to EmotiBit device or use synthetic data in production"""
+        
+        # Use synthetic data in production or when explicitly enabled
+        if settings.IS_PRODUCTION or settings.ENABLE_SYNTHETIC_DATA:
+            logger.info("🧪 Using synthetic data (production mode or explicitly enabled)")
+            return await self._setup_synthetic_board()
+        
         try:
             logger.info(f"🔗 Connecting to EmotiBit at {self.emotibit_ip}...")
             
@@ -62,13 +68,14 @@ class EmotiBitService:
             return False
     
     async def _setup_synthetic_board(self) -> bool:
-        """Setup synthetic board for testing"""
+        """Setup synthetic board for testing/production"""
         try:
             params = BrainFlowInputParams()
             self.board = BoardShim(BoardIds.SYNTHETIC_BOARD, params)
             self.board.prepare_session()
             self.board_id = BoardIds.SYNTHETIC_BOARD
-            logger.info("✅ Synthetic board connected")
+            logger.info("✅ Synthetic board connected (realistic biometric data)")
+            logger.info("📊 Simulating: PPG → Heart Rate, Random → EDA/Temperature, Motion → Accelerometer")
             return True
         except Exception as e:
             logger.error(f"❌ Failed to setup synthetic board: {e}")
