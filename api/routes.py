@@ -43,6 +43,21 @@ async def connect_device():
         logger.error(f"❌ Error connecting device: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.post("/device/connect-mock")
+async def connect_mock_device():
+    """Force connection to mock device for testing"""
+    try:
+        # Force mock mode
+        success = await emotibit_service._setup_mock_board()
+        if success:
+            await emotibit_service.start_streaming()
+            return {"message": "Mock device connected successfully", "success": True, "mode": "mock"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to connect to mock device")
+    except Exception as e:
+        logger.error(f"❌ Error connecting mock device: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.post("/device/disconnect")
 async def disconnect_device():
     """Disconnect from EmotiBit device"""
