@@ -19,6 +19,7 @@ class EmotiBitService:
         self.is_streaming = False
         self.board_id = BoardIds.EMOTIBIT_BOARD  # 47
         self.emotibit_ip = "192.168.0.187"  # Use actual EmotiBit IP, not broadcast
+        self.is_mock_mode = False  # Flag for mock data mode
         
     async def connect(self) -> bool:
         """Connect to EmotiBit device or use synthetic data in production"""
@@ -70,6 +71,12 @@ class EmotiBitService:
     async def _setup_synthetic_board(self) -> bool:
         """Setup synthetic board for testing/production"""
         try:
+            # Try to disable BrainFlow logging to avoid Railway issues
+            try:
+                BoardShim.disable_board_logger()
+            except:
+                pass
+                
             params = BrainFlowInputParams()
             self.board = BoardShim(BoardIds.SYNTHETIC_BOARD, params)
             self.board.prepare_session()
@@ -79,6 +86,22 @@ class EmotiBitService:
             return True
         except Exception as e:
             logger.error(f"❌ Failed to setup synthetic board: {e}")
+            # If BrainFlow fails completely, create a mock board service
+            logger.info("🔄 Falling back to mock data service")
+            return await self._setup_mock_board()
+    
+    async def _setup_mock_board(self) -> bool:
+        """Setup mock board when BrainFlow synthetic board fails"""
+        try:
+            # Create a mock board object that simulates data
+            self.board = "mock_board"  # Simple flag to indicate mock mode
+            self.board_id = -1  # Mock board ID
+            self.is_mock_mode = True
+            logger.info("✅ Mock board service initialized")
+            logger.info("📊 Generating simulated biometric data without BrainFlow")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Even mock board setup failed: {e}")
             return False
     
     async def start_streaming(self) -> bool:
@@ -86,6 +109,13 @@ class EmotiBitService:
         if not self.board:
             logger.error("❌ Board not connected")
             return False
+        
+        # Handle mock mode
+        if getattr(self, 'is_mock_mode', False):
+            logger.info("🔄 Starting mock data streaming...")
+            self.is_streaming = True
+            logger.info("✅ Mock data streaming started")
+            return True
             
         try:
             logger.info("🔄 Starting EmotiBit data streaming...")
@@ -137,6 +167,10 @@ class EmotiBitService:
         """Get current sensor data from EmotiBit using proper channel extraction"""
         if not self.board or not self.is_streaming:
             return None
+        
+        # Handle mock mode
+        if getattr(self, 'is_mock_mode', False):
+            return self._generate_mock_data()
             
         try:
             # Get data from all available presets
@@ -370,10 +404,75 @@ class EmotiBitService:
             logger.error(f"❌ Error extracting sensor data: {e}")
             return sensor_data
     
+    def _generate_mock_data(self) -> Dict[str, Any]:
+        """Generate realistic mock biometric data"""
+        import random
+        import time
+        import math
+        
+        current_time = time.time()
+        
+        # Generate realistic biometric data
+        mock_data = {
+            'ppg': [],
+            'eda': [],
+            'temperature': [],
+            'accelerometer': {'x': [], 'y': [], 'z': []},
+            'gyroscope': {'x': [], 'y': [], 'z': []},
+            'magnetometer': {'x': [], 'y': [], 'z': []},
+            'timestamp': []
+        }
+        
+        # Generate 10 samples of realistic data
+        for i in range(10):
+            timestamp = current_time - (9-i) * 0.04  # 25Hz = 0.04s intervals
+            
+            # Realistic PPG data (simulates heart beats around 70 BPM)
+            heart_phase = (timestamp * 1.17) % (2 * math.pi)  # ~70 BPM
+            ppg_signal = 1000 + 200 * math.sin(heart_phase) + random.uniform(-50, 50)
+            mock_data['ppg'].append(ppg_signal)
+            
+            # Realistic EDA data (skin conductance, 0.1-5 microsiemens)
+            eda_base = 1.5 + 0.5 * math.sin(timestamp * 0.1)  # Slow variation
+            eda_noise = random.uniform(-0.1, 0.1)
+            mock_data['eda'].append(eda_base + eda_noise)
+            
+            # Realistic temperature (body temperature around 36-37°C)
+            temp_base = 36.8 + 0.3 * math.sin(timestamp * 0.05)  # Very slow variation
+            temp_noise = random.uniform(-0.1, 0.1)
+            mock_data['temperature'].append(temp_base + temp_noise)
+            
+            # Realistic accelerometer data (slight movements)
+            mock_data['accelerometer']['x'].append(random.uniform(-0.5, 0.5))
+            mock_data['accelerometer']['y'].append(random.uniform(-0.5, 0.5)) 
+            mock_data['accelerometer']['z'].append(9.8 + random.uniform(-0.2, 0.2))  # Gravity + noise
+            
+            # Realistic gyroscope data (minimal rotation)
+            mock_data['gyroscope']['x'].append(random.uniform(-0.1, 0.1))
+            mock_data['gyroscope']['y'].append(random.uniform(-0.1, 0.1))
+            mock_data['gyroscope']['z'].append(random.uniform(-0.1, 0.1))
+            
+            mock_data['timestamp'].append(timestamp)
+        
+        logger.debug(f"📊 Generated mock data: PPG({len(mock_data['ppg'])}), EDA({len(mock_data['eda'])}), Temp({len(mock_data['temperature'])})")
+        return mock_data
+    
     def get_board_info(self) -> Dict[str, Any]:
         """Get board information"""
         if not self.board:
             return {}
+        
+        # Handle mock mode
+        if getattr(self, 'is_mock_mode', False):
+            return {
+                'board_id': -1,
+                'board_name': 'Mock Biometric Simulator',
+                'is_streaming': self.is_streaming,
+                'connection_status': 'connected (mock mode)',
+                'sampling_rate': 25,
+                'board_description': 'Realistic simulated biometric data for production',
+                'data_mode': 'mock'
+            }
             
         try:
             info = {
